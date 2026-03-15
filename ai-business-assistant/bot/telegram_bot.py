@@ -13,7 +13,6 @@ from agent.memory import Memory
 from agent.planner import Planner
 from database.db import Database
 from integrations.google_calendar import GoogleCalendarService
-from integrations.openai_fallback import OpenAIFallback
 from llm.ollama_client import OllamaClient
 from scheduler.reminders import ReminderScheduler
 from tools.calendar_tool import CalendarTool
@@ -46,12 +45,8 @@ def build_assistant() -> Assistant:
     executor = Executor(task_tool, notes_tool, reminder_tool, calendar_tool, search_tool, python_tool)
     memory = Memory(db, max_messages=settings.MAX_CONTEXT_MESSAGES)
 
-    fallback = None
-    if settings.ENABLE_OPENAI_FALLBACK and settings.OPENAI_API_KEY:
-        fallback = OpenAIFallback(settings.OPENAI_API_KEY, settings.OPENAI_MODEL)
-
     ollama = OllamaClient(settings.OLLAMA_BASE_URL, settings.MODEL_NAME)
-    return Assistant(planner, executor, memory, ollama, fallback)
+    return Assistant(planner, executor, memory, ollama)
 
 
 ASSISTANT = build_assistant()

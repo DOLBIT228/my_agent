@@ -5,7 +5,6 @@ duckduckgo-search==6.3.0
 google-api-python-client==2.154.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
-openai==1.54.4
 python-dateutil==2.9.0.post0
 streamlit==1.40.1
 pandas==2.2.3

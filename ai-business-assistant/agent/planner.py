@@ -8,7 +8,6 @@ from dataclasses import dataclass
 class Plan:
     intent: str
     payload: dict
-    use_fallback: bool = False
 
 
 class Planner:
@@ -34,8 +33,4 @@ class Planner:
         if low.startswith("python:"):
             return Plan("python", {"code": text.split(":", 1)[1].strip()})
 
-        complex_prompt = any(
-            k in low
-            for k in ["strategy", "analyze", "investor memo", "deep research", "стратег", "проаналізуй", "глибоке дослідження"]
-        )
-        return Plan("chat", {"text": text}, use_fallback=complex_prompt)
+        return Plan("chat", {"text": text})
