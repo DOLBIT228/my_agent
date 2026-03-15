@@ -1,7 +1,6 @@
 """Telegram bot entrypoint."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from telegram import Update
@@ -60,8 +59,9 @@ ASSISTANT = build_assistant()
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "👋 Personal AI Business Assistant is online.\n"
-        "Try: 'Add task: prepare investor deck' or 'Remind me in 30 minutes to call Alex'."
+        "👋 Вітаю! Персональний AI-помічник вже онлайн.\n"
+        "Спробуйте: 'додай задачу: підготувати презентацію для інвестора' або "
+        "'нагадай через 30 хвилин зателефонувати Олексію'."
     )
 
 
@@ -74,21 +74,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     async def send_callback(target_chat_id: str, text: str) -> None:
         await context.bot.send_message(chat_id=int(target_chat_id), text=text)
 
+    status_message = await update.message.reply_text("⏳ Працюю над вашою відповіддю...")
     response = await ASSISTANT.handle_message(chat_id, update.message.text, send_callback)
-    await update.message.reply_text(response)
+    await status_message.edit_text(response)
 
 
 def main() -> None:
     if not settings.TELEGRAM_TOKEN:
-        raise RuntimeError("TELEGRAM_TOKEN is missing. Set it in environment variables.")
+        raise RuntimeError("Відсутній TELEGRAM_TOKEN. Додайте його у змінні середовища.")
 
     app = Application.builder().token(settings.TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Starting Telegram bot...")
+    logger.info("Запускаю Telegram-бота...")
     app.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(asyncio.to_thread(main))
+    main()
