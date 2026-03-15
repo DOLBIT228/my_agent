@@ -8,7 +8,6 @@ A production-style, local-first **Python** assistant that runs as a Telegram bot
 - task and notes management
 - internet search
 - local LLM reasoning via **Ollama**
-- optional cloud fallback via **OpenAI API**
 
 ## Architecture
 
@@ -17,7 +16,7 @@ Telegram message
   -> Planner
   -> Tool Router / Executor
   -> Tool execution (calendar, reminders, tasks, notes, search, python)
-  -> LLM reasoning (Ollama primary, OpenAI fallback optional)
+  -> LLM reasoning (Ollama)
   -> Telegram response
 ```
 
@@ -30,7 +29,6 @@ Core modules:
 - `bot/telegram_bot.py`: Telegram runtime
 - `integrations/google_calendar.py`: Google Calendar API
 - `llm/ollama_client.py`: local LLM client
-- `integrations/openai_fallback.py`: optional cloud fallback
 - `scheduler/reminders.py`: APScheduler integration
 - `database/db.py`: SQLite persistence
 
@@ -123,11 +121,6 @@ export TELEGRAM_TOKEN="your-token"
 export MODEL_NAME="phi3:mini"
 export MAX_CONTEXT_MESSAGES="10"
 export GOOGLE_CALENDAR_ENABLED="true"
-export ENABLE_OPENAI_FALLBACK="false"
-
-# Optional OpenAI fallback
-export OPENAI_API_KEY="sk-..."
-export OPENAI_MODEL="gpt-4o-mini"
 ```
 
 ### 7) Start assistant
@@ -158,7 +151,46 @@ streamlit run admin/streamlit_app.py
 - SQLite-backed persistence
 - Async reminder scheduling via APScheduler
 - Environment-driven config for deployment portability
-- Local-first inference with optional cloud fallback
+- Fully local-first inference via Ollama
+
+## Що вміє агент
+
+- Керувати задачами: додавати, показувати список, позначати виконаними.
+- Керувати нотатками: зберігати важливу інформацію й показувати список нотаток.
+- Створювати нагадування: парсити фрази типу "нагадай через 2 години..." і надсилати в Telegram.
+- Працювати з календарем (опційно): створювати/читати події Google Calendar, якщо увімкнено інтеграцію.
+- Робити веб-пошук: швидко знаходити довідкову інформацію через search tool.
+- Виконувати простий Python-код за запитом (`python: ...`).
+- Вести діалог українською на базі локальної моделі Ollama.
+
+## Приклади запитів і як агент їх виконує
+
+1. **"Додай задачу: підготувати КП для клієнта"**
+   - Planner розпізнає намір `add_task`.
+   - Executor викликає `TaskTool`.
+   - `TaskTool` зберігає задачу в SQLite.
+   - Бот повертає підтвердження з ID задачі.
+
+2. **"Нагадай через 30 хвилин перевірити пошту"**
+   - Planner визначає `set_reminder`.
+   - Executor передає текст у `ReminderTool`.
+   - `ReminderTool` створює запис у БД та задачу в APScheduler.
+   - У потрібний час бот надсилає нагадування в чат.
+
+3. **"Пошук трендів AI в освіті 2026"**
+   - Planner визначає намір `search`.
+   - Executor викликає `SearchTool`.
+   - Інструмент формує короткий результат пошуку й повертає його в чат.
+
+4. **"Мені потрібно дослідити компанію Google і зберегти у файл"**
+   - Спочатку агент може зібрати факти через `search`.
+   - Потім за запитом `python:` можна сформувати та зберегти `.txt`/`.md` файл локально.
+   - Якщо потрібен конкретний формат, краще вказати шаблон (наприклад: "розділи: історія, продукти, фінанси").
+
+5. **"Які в мене задачі?"**
+   - Planner обирає `list_tasks`.
+   - Executor викликає `TaskTool` для читання з БД.
+   - Бот повертає структурований список активних задач.
 
 ## License
 

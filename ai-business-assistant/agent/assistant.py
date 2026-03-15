@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.config import settings
 from agent.executor import Executor
 from agent.memory import Memory
 from agent.planner import Planner
@@ -11,12 +10,11 @@ from llm.ollama_client import OllamaClient
 
 
 class Assistant:
-    def __init__(self, planner: Planner, executor: Executor, memory: Memory, ollama: OllamaClient, openai_fallback=None) -> None:
+    def __init__(self, planner: Planner, executor: Executor, memory: Memory, ollama: OllamaClient) -> None:
         self.planner = planner
         self.executor = executor
         self.memory = memory
         self.ollama = ollama
-        self.openai_fallback = openai_fallback
         self.system_prompt = Path("prompts/system_prompt.txt").read_text(encoding="utf-8")
 
     @staticmethod
@@ -45,25 +43,16 @@ class Assistant:
         try:
             response = self.ollama.chat(messages)
         except Exception:
-            if settings.ENABLE_OPENAI_FALLBACK and self.openai_fallback:
-                response = self.openai_fallback.chat(messages)
-            else:
-                response = "Не вдалося опрацювати запит локально. Спробуйте переформулювати його коротше."
-
-        if plan.use_fallback and settings.ENABLE_OPENAI_FALLBACK and self.openai_fallback:
-            response = self.openai_fallback.chat(messages)
-
-        if "use cloud" in text.lower() and settings.ENABLE_OPENAI_FALLBACK and self.openai_fallback:
-            response = self.openai_fallback.chat(messages)
+            response = (
+                "Поки не вдалося обробити запит локально. "
+                "Спробуйте сформулювати коротше або розбити задачу на кроки."
+            )
 
         if self._is_low_quality_response(response):
-            if settings.ENABLE_OPENAI_FALLBACK and self.openai_fallback:
-                response = self.openai_fallback.chat(messages)
-            else:
-                response = (
-                    "Перепрошую, відповідь вийшла некоректною. "
-                    "Будь ласка, уточніть запит — і я відповім чітко українською."
-                )
+            response = (
+                "Перепрошую, відповідь вийшла нечіткою. "
+                "Уточніть, будь ласка, що саме потрібно: формат результату, обсяг або тему."
+            )
 
         self.memory.add_message(chat_id, "assistant", response)
         return response
