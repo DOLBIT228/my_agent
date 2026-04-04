@@ -5,6 +5,7 @@ import json
 import sys
 import time
 import socket
+import asyncio
 
 from groq import Groq
 from telegram import Update, BotCommand
@@ -192,6 +193,60 @@ def git_clone(repo):
     except Exception as e:
         return str(e)
 
+
+def has_updates():
+    try:
+        local_head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_DIR,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        remote_head = subprocess.check_output(
+            ["git", "rev-parse", "origin/main"],
+            cwd=PROJECT_DIR,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        return local_head != remote_head
+    except Exception:
+        return False
+
+
+async def auto_update_loop(app):
+    while True:
+        try:
+            subprocess.run(
+                ["git", "fetch"],
+                cwd=PROJECT_DIR,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+
+            if has_updates():
+                subprocess.run(
+                    ["git", "pull"],
+                    cwd=PROJECT_DIR,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+                print("🔄 Update applied. Restarting bot...")
+                subprocess.run(
+                    [
+                        "launchctl",
+                        "kickstart",
+                        "-k",
+                        f"gui/{os.getuid()}/com.bot.agent",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        except Exception:
+            pass
+
+        await asyncio.sleep(30)
+
 # ---------- COMMANDS ----------
 
 async def git_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,6 +305,11 @@ async def set_commands(app):
         BotCommand("update", "Оновити код"),
     ])
 
+
+async def on_startup(app):
+    await set_commands(app)
+    app.create_task(auto_update_loop(app))
+
 def main():
     acquire_lock()
 
@@ -257,7 +317,7 @@ def main():
         wait_for_internet()
         notify_start()
 
-        app = ApplicationBuilder().token(TOKEN).post_init(set_commands).build()
+        app = ApplicationBuilder().token(TOKEN).post_init(on_startup).build()
 
         app.add_handler(CommandHandler("tools", tools_cmd))
         app.add_handler(CommandHandler("git", git_cmd))
