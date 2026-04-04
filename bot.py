@@ -18,6 +18,7 @@ create_file(filename)
 read_file(filename)
 delete_file(filename)
 git_pull()
+restart()
 
 If action needed -> return JSON:
 
@@ -26,6 +27,7 @@ If action needed -> return JSON:
 Otherwise return text.
 
 If user asks to update code (for example: "онови код", "update project", "pull latest changes"), call tool git_pull.
+If user asks to restart (for example: "перезапусти", "restart agent", "reload system"), call tool restart.
 
 DO NOT explain tools."""
 
@@ -69,6 +71,20 @@ def git_pull():
     except Exception as e:
         return str(e)
 
+
+def restart_agent():
+    import threading
+    import os
+    import time
+
+    def restart():
+        time.sleep(2)
+        os.system("launchctl kickstart -k gui/$(id -u)/com.bot.agent")
+
+    threading.Thread(target=restart).start()
+
+    return "♻️ Restarting agent..."
+
 def ask_ai(prompt):
     if not GROQ_API_KEY:
         return "GROQ_API_KEY is not set"
@@ -103,6 +119,9 @@ def try_execute_tool(response):
 
         if tool == "git_pull":
             return git_pull()
+
+        if tool == "restart":
+            return restart_agent()
 
     except:
         return None
