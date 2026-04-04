@@ -2,8 +2,11 @@ import json
 import os
 import subprocess
 import asyncio
+import signal
+import sys
 from pathlib import Path
 
+import requests
 from dotenv import load_dotenv
 from groq import Groq
 from telegram.ext import ApplicationBuilder, MessageHandler, filters
@@ -126,11 +129,35 @@ async def notify_status(application, text):
 
 
 async def on_startup(application):
-    await notify_status(application, "✅ Бот запущено. Я готовий до роботи.")
+    await notify_status(application, "🚀 Агент запущений")
 
 
-async def on_shutdown(application):
-    await notify_status(application, "🛑 Бот зупиняється.")
+def notify_stop():
+    chat_id = load_last_chat_id()
+    if not chat_id and DEFAULT_CHAT_ID:
+        try:
+            chat_id = int(DEFAULT_CHAT_ID)
+        except ValueError:
+            return
+    if not chat_id:
+        return
+
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": "🔴 Агент зупинено"
+            },
+            timeout=5
+        )
+    except Exception:
+        pass
+
+
+def handle_exit(signum, frame):
+    notify_stop()
+    sys.exit(0)
 
 def ask_ai(prompt):
     if not GROQ_API_KEY:
@@ -245,10 +272,11 @@ def main():
         ApplicationBuilder()
         .token(TOKEN)
         .post_init(on_startup)
-        .post_shutdown(on_shutdown)
         .build()
     )
     app.add_handler(MessageHandler(filters.TEXT, handle))
+    signal.signal(signal.SIGTERM, handle_exit)
+    signal.signal(signal.SIGINT, handle_exit)
 
     print("🚀 BOT STARTED")
     app.run_polling()
