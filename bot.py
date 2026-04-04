@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 
 from dotenv import load_dotenv
@@ -102,31 +103,42 @@ def ask_ai(prompt):
 
 
 def try_execute_tool(response):
-    try:
-        data = json.loads(response)
+    blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
+    results = []
+
+    for block in blocks:
+        try:
+            data = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+
+        if not isinstance(data, dict):
+            continue
 
         tool = data.get("tool")
         args = data.get("args", {})
+        if not isinstance(args, dict):
+            args = {}
 
+        result = None
         if tool == "create_file":
-            return create_file(args.get("filename"))
+            result = create_file(args.get("filename"))
+        elif tool == "read_file":
+            result = read_file(args.get("filename"))
+        elif tool == "delete_file":
+            result = delete_file(args.get("filename"))
+        elif tool == "git_pull":
+            result = git_pull()
+        elif tool == "restart":
+            result = restart_agent()
 
-        if tool == "read_file":
-            return read_file(args.get("filename"))
+        if result is not None:
+            results.append(result)
 
-        if tool == "delete_file":
-            return delete_file(args.get("filename"))
-
-        if tool == "git_pull":
-            return git_pull()
-
-        if tool == "restart":
-            return restart_agent()
-
-    except:
+    if not results:
         return None
 
-    return None
+    return "\n".join(results)
 
 
 async def handle(update, context):
