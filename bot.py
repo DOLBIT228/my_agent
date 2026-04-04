@@ -9,7 +9,7 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 from groq import Groq
-from telegram.ext import ApplicationBuilder, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
 load_dotenv("/Users/oleksandr_ishcheko/ai-agent/.env")
 TOKEN = os.getenv("TOKEN")
@@ -255,23 +255,6 @@ def try_execute_tool(response):
 async def handle(update, context):
     text = update.message.text or ""
     save_last_chat_id(update.effective_chat.id)
-    parts = text.split()
-
-    if len(parts) >= 2:
-        command, filename = parts[0], parts[1]
-
-        if command == "create_file":
-            result = create_file(filename)
-            await update.message.reply_text(result)
-            return
-        if command == "read_file":
-            result = read_file(filename)
-            await update.message.reply_text(result)
-            return
-        if command == "delete_file":
-            result = delete_file(filename)
-            await update.message.reply_text(result)
-            return
 
     ai_response = ask_ai(text)
     print("AI:", ai_response)
@@ -281,7 +264,18 @@ async def handle(update, context):
     if result is not None:
         await update.message.reply_text(result)
     else:
-        await update.message.reply_text(ai_response)
+        await update.message.reply_text("Я не можу виконати цю дію")
+
+
+async def ai_handler(update, context):
+    prompt = " ".join(context.args)
+
+    if not prompt:
+        await update.message.reply_text("Введи запит після /ai")
+        return
+
+    response = ask_ai(prompt)
+    await update.message.reply_text(response)
 
 
 def main():
@@ -294,7 +288,8 @@ def main():
         .post_init(on_startup)
         .build()
     )
-    app.add_handler(MessageHandler(filters.TEXT, handle))
+    app.add_handler(CommandHandler("ai", ai_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
 
