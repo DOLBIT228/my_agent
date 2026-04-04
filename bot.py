@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import asyncio
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,6 +11,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters
 load_dotenv("/Users/oleksandr_ishcheko/ai-agent/.env")
 TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 
@@ -93,13 +95,34 @@ def load_last_chat_id():
 
 
 async def notify_status(application, text):
-    chat_id = load_last_chat_id()
-    if not chat_id:
+    chat_ids = []
+
+    last_chat_id = load_last_chat_id()
+    if last_chat_id:
+        chat_ids.append(last_chat_id)
+
+    if DEFAULT_CHAT_ID:
+        try:
+            default_chat_id = int(DEFAULT_CHAT_ID)
+            if default_chat_id not in chat_ids:
+                chat_ids.append(default_chat_id)
+        except ValueError:
+            pass
+
+    if not chat_ids:
         return
-    try:
-        await application.bot.send_message(chat_id=chat_id, text=text)
-    except Exception:
-        pass
+
+    for chat_id in chat_ids:
+        for attempt in range(3):
+            try:
+                await application.bot.send_message(chat_id=chat_id, text=text)
+                return
+            except Exception as error:
+                print(
+                    f"Не вдалося надіслати статус у chat_id={chat_id}, "
+                    f"спроба {attempt + 1}/3: {error}"
+                )
+                await asyncio.sleep(1)
 
 
 async def on_startup(application):
