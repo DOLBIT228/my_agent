@@ -194,56 +194,42 @@ def git_clone(repo):
         return str(e)
 
 
-def has_updates():
+def check_for_updates():
     try:
-        local_head = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=PROJECT_DIR,
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-        remote_head = subprocess.check_output(
-            ["git", "rev-parse", "origin/main"],
-            cwd=PROJECT_DIR,
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-        return local_head != remote_head
-    except Exception:
+        subprocess.check_output(
+            f"cd {PROJECT_DIR} && git fetch",
+            shell=True
+        )
+
+        local = subprocess.check_output(
+            f"cd {PROJECT_DIR} && git rev-parse HEAD",
+            shell=True
+        ).strip()
+
+        remote = subprocess.check_output(
+            f"cd {PROJECT_DIR} && git rev-parse origin/main",
+            shell=True
+        ).strip()
+
+        return local != remote
+
+    except:
         return False
 
 
 async def auto_update_loop(app):
     while True:
         try:
-            subprocess.run(
-                ["git", "fetch"],
-                cwd=PROJECT_DIR,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
+            has_update = check_for_updates()
 
-            if has_updates():
-                subprocess.run(
-                    ["git", "pull"],
-                    cwd=PROJECT_DIR,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True,
-                )
-                print("🔄 Update applied. Restarting bot...")
-                subprocess.run(
-                    [
-                        "launchctl",
-                        "kickstart",
-                        "-k",
-                        f"gui/{os.getuid()}/com.bot.agent",
-                    ],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-        except Exception:
-            pass
+            if has_update:
+                print("⬇️ Updating from Git...")
+                git_pull()
+
+                print("⚠️ Update downloaded. Restart required (launchd will handle it if needed).")
+
+        except Exception as e:
+            print(f"Auto update error: {e}")
 
         await asyncio.sleep(30)
 
@@ -258,10 +244,7 @@ async def update_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = git_pull()
     await update.message.reply_text(result[:4000])
-
-    await update.message.reply_text("♻️ Перезапуск...")
-
-    os.system("launchctl kickstart -k gui/$(id -u)/com.bot.agent")
+    await update.message.reply_text("⚠️ Оновлення завантажено. Перезапустіть бота за потреби.")
 
 async def tools_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
