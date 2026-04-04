@@ -18,30 +18,28 @@ DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 
-SYSTEM_PROMPT = """Ти локальний AI-агент.
+AGENT_PROMPT = """Ти AI-агент.
+Ти виконуєш дії через tools.
 
-Ти МОЖЕШ використовувати ТІЛЬКИ наступні інструменти:
+Доступні інструменти:
+- create_file
+- read_file
+- delete_file
+- git_pull
+- restart
 
-- create_file(filename)
-- read_file(filename)
-- delete_file(filename)
-- git_pull()
-- restart()
+Ти НЕ пояснюєш.
+Ти виконуєш.
+"""
 
-ЗАБОРОНЕНО:
-- вигадувати нові інструменти
-- згадувати інструменти яких немає
+AI_PROMPT = """Ти AI асистент.
 
-Якщо інструмент відсутній — скажи:
-"Цей інструмент недоступний"
+Ти відповідаєш на питання користувача українською мовою.
+Ти НЕ маєш доступу до інструментів.
+Ти НЕ вигадуєш інструменти.
 
-Якщо потрібно виконати дію — поверни JSON:
-
-{"tool": "...", "args": {...}}
-
-Інакше — відповідай текстом українською.
-
----"""
+Ти просто даєш відповідь.
+"""
 
 
 def create_file(filename):
@@ -179,15 +177,20 @@ def handle_exit(signum, frame):
     notify_stop()
     sys.exit(0)
 
-def ask_ai(prompt):
+def ask_ai(prompt, mode="agent"):
     if not GROQ_API_KEY:
         return "GROQ_API_KEY не встановлено"
+
+    if mode == "agent":
+        system = AGENT_PROMPT
+    else:
+        system = AI_PROMPT
 
     client = Groq(api_key=GROQ_API_KEY)
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
         temperature=0,
@@ -256,7 +259,7 @@ async def handle(update, context):
     text = update.message.text or ""
     save_last_chat_id(update.effective_chat.id)
 
-    ai_response = ask_ai(text)
+    ai_response = ask_ai(text, mode="agent")
     print("AI:", ai_response)
     result = try_execute_tool(ai_response)
     print("RESULT:", result)
@@ -274,7 +277,7 @@ async def ai_handler(update, context):
         await update.message.reply_text("Введи запит після /ai")
         return
 
-    response = ask_ai(prompt)
+    response = ask_ai(prompt, mode="chat")
     await update.message.reply_text(response)
 
 
