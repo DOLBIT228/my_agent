@@ -309,6 +309,7 @@ def main():
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
         print("🚀 Agent started")
+        print("AUTO DEPLOY WORKS")
 
         app.run_polling()
 
