@@ -103,42 +103,43 @@ def ask_ai(prompt):
 
 
 def try_execute_tool(response):
-    blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
-    results = []
+    try:
+        blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
 
-    for block in blocks:
-        try:
-            data = json.loads(block)
-        except json.JSONDecodeError:
-            continue
+        results = []
 
-        if not isinstance(data, dict):
-            continue
+        for block in blocks:
+            try:
+                data = json.loads(block)
 
-        tool = data.get("tool")
-        args = data.get("args", {})
-        if not isinstance(args, dict):
-            args = {}
+                tool = data.get("tool")
+                args = data.get("args", {})
 
-        result = None
-        if tool == "create_file":
-            result = create_file(args.get("filename"))
-        elif tool == "read_file":
-            result = read_file(args.get("filename"))
-        elif tool == "delete_file":
-            result = delete_file(args.get("filename"))
-        elif tool == "git_pull":
-            result = git_pull()
-        elif tool == "restart":
-            result = restart_agent()
+                if tool == "create_file":
+                    results.append(create_file(args.get("filename")))
 
-        if result is not None:
-            results.append(result)
+                elif tool == "read_file":
+                    results.append(read_file(args.get("filename")))
 
-    if not results:
+                elif tool == "delete_file":
+                    results.append(delete_file(args.get("filename")))
+
+                elif tool == "git_pull":
+                    results.append(git_pull())
+
+                elif tool == "restart":
+                    results.append(restart_agent())
+
+            except:
+                continue
+
+        if results:
+            return "\n".join(results)
+
         return None
 
-    return "\n".join(results)
+    except:
+        return None
 
 
 async def handle(update, context):
