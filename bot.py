@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 
 from dotenv import load_dotenv
 from groq import Groq
@@ -16,12 +17,15 @@ You can use tools:
 create_file(filename)
 read_file(filename)
 delete_file(filename)
+git_pull()
 
 If action needed -> return JSON:
 
 {\"tool\": \"...\", \"args\": {...}}
 
 Otherwise return text.
+
+If user asks to update code (for example: "онови код", "update project", "pull latest changes"), call tool git_pull.
 
 DO NOT explain tools."""
 
@@ -54,6 +58,17 @@ def delete_file(filename):
     return f"Deleted: {filename}"
 
 
+
+
+def git_pull():
+    try:
+        return subprocess.check_output(
+            "cd /Users/oleksandr_ishcheko/ai-agent && git pull",
+            shell=True
+        ).decode()
+    except Exception as e:
+        return str(e)
+
 def ask_ai(prompt):
     if not GROQ_API_KEY:
         return "GROQ_API_KEY is not set"
@@ -85,6 +100,9 @@ def try_execute_tool(response):
 
         if tool == "delete_file":
             return delete_file(args.get("filename"))
+
+        if tool == "git_pull":
+            return git_pull()
 
     except:
         return None
