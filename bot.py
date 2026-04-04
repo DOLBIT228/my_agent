@@ -124,6 +124,7 @@ def try_execute_tool(response):
 
         blocks = extract_json_blocks(response)
         results = []
+        git_result = None
 
         for block in blocks:
             try:
@@ -141,8 +142,11 @@ def try_execute_tool(response):
             elif tool == "delete_file":
                 results.append(delete_file(args.get("filename")))
             elif tool == "git_pull":
-                results.append(git_pull())
+                git_result = git_pull()
+                results.append(git_result)
             elif tool == "restart":
+                if git_result and "Already up to date" in git_result:
+                    continue
                 results.append(restart_agent())
 
         if results:
