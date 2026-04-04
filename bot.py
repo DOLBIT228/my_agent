@@ -11,25 +11,10 @@ TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 
-SYSTEM_PROMPT = """You are an AI agent.
-You can use tools:
-
-create_file(filename)
-read_file(filename)
-delete_file(filename)
-git_pull()
-restart()
-
-If action needed -> return JSON:
-
-{\"tool\": \"...\", \"args\": {...}}
-
-Otherwise return text.
-
-If user asks to update code (for example: "онови код", "update project", "pull latest changes"), call tool git_pull.
-If user asks to restart (for example: "перезапусти", "restart agent", "reload system"), call tool restart.
-
-DO NOT explain tools."""
+SYSTEM_PROMPT = """Ти локальний AI-агент.
+Відповідай українською мовою.
+Будь коротким, чітким і практичним.
+Якщо потрібно виконати дію — використовуй tools."""
 
 
 def create_file(filename):
@@ -37,39 +22,42 @@ def create_file(filename):
     filepath = os.path.join(BASE_DIR, filename)
     with open(filepath, "w", encoding="utf-8"):
         pass
-    return f"Created: {filename}"
+    return f"Створено: {filename}"
 
 
 def read_file(filename):
     filename = os.path.basename(filename)
     filepath = os.path.join(BASE_DIR, filename)
     if not os.path.exists(filepath):
-        return f"Not found: {filename}"
+        return f"Не знайдено: {filename}"
 
     with open(filepath, "r", encoding="utf-8") as file:
-        return file.read() or "(empty file)"
+        return file.read() or "(порожній файл)"
 
 
 def delete_file(filename):
     filename = os.path.basename(filename)
     filepath = os.path.join(BASE_DIR, filename)
     if not os.path.exists(filepath):
-        return f"Not found: {filename}"
+        return f"Не знайдено: {filename}"
 
     os.remove(filepath)
-    return f"Deleted: {filename}"
+    return f"Видалено: {filename}"
 
 
 
 
 def git_pull():
     try:
-        return subprocess.check_output(
+        output = subprocess.check_output(
             "cd /Users/oleksandr_ishcheko/ai-agent && git pull",
             shell=True
         ).decode()
+        if "Already up to date" in output:
+            return "Оновлень немає"
+        return output
     except Exception as e:
-        return str(e)
+        return f"Помилка git pull: {e}"
 
 
 def restart_agent():
@@ -83,11 +71,11 @@ def restart_agent():
 
     threading.Thread(target=restart).start()
 
-    return "♻️ Restarting agent..."
+    return "♻️ Перезапуск агента..."
 
 def ask_ai(prompt):
     if not GROQ_API_KEY:
-        return "GROQ_API_KEY is not set"
+        return "GROQ_API_KEY не встановлено"
 
     client = Groq(api_key=GROQ_API_KEY)
     response = client.chat.completions.create(
@@ -145,7 +133,7 @@ def try_execute_tool(response):
                 git_result = git_pull()
                 results.append(git_result)
             elif tool == "restart":
-                if git_result and "Already up to date" in git_result:
+                if git_result and "Оновлень немає" in git_result:
                     continue
                 results.append(restart_agent())
 
@@ -190,7 +178,7 @@ async def handle(update, context):
 
 def main():
     if not TOKEN:
-        raise RuntimeError("TOKEN is not set in the .env file")
+        raise RuntimeError("TOKEN не встановлено у файлі .env")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT, handle))
