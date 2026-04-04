@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+from pathlib import Path
 
 from dotenv import load_dotenv
 from groq import Groq
@@ -10,6 +11,7 @@ load_dotenv("/Users/oleksandr_ishcheko/ai-agent/.env")
 TOKEN = os.getenv("TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
+LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 
 SYSTEM_PROMPT = """Ти локальний AI-агент.
 Відповідай українською мовою.
@@ -73,6 +75,40 @@ def restart_agent():
 
     return "♻️ Перезапуск агента..."
 
+
+def save_last_chat_id(chat_id):
+    try:
+        LAST_CHAT_ID_FILE.write_text(str(chat_id), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def load_last_chat_id():
+    try:
+        if LAST_CHAT_ID_FILE.exists():
+            return int(LAST_CHAT_ID_FILE.read_text(encoding="utf-8").strip())
+    except Exception:
+        return None
+    return None
+
+
+async def notify_status(application, text):
+    chat_id = load_last_chat_id()
+    if not chat_id:
+        return
+    try:
+        await application.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        pass
+
+
+async def on_startup(application):
+    await notify_status(application, "✅ Бот запущено. Я готовий до роботи.")
+
+
+async def on_shutdown(application):
+    await notify_status(application, "🛑 Бот зупиняється.")
+
 def ask_ai(prompt):
     if not GROQ_API_KEY:
         return "GROQ_API_KEY не встановлено"
@@ -135,6 +171,7 @@ def try_execute_tool(response):
             elif tool == "restart":
                 if git_result and "Оновлень немає" in git_result:
                     continue
+                results.append("ℹ️ Отримано команду на перезапуск. Перезапускаюся...")
                 results.append(restart_agent())
 
         if results:
@@ -147,6 +184,7 @@ def try_execute_tool(response):
 
 async def handle(update, context):
     text = update.message.text or ""
+    save_last_chat_id(update.effective_chat.id)
     parts = text.split()
 
     if len(parts) >= 2:
@@ -180,7 +218,13 @@ def main():
     if not TOKEN:
         raise RuntimeError("TOKEN не встановлено у файлі .env")
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .post_init(on_startup)
+        .post_shutdown(on_shutdown)
+        .build()
+    )
     app.add_handler(MessageHandler(filters.TEXT, handle))
 
     print("🚀 BOT STARTED")
