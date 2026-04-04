@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import subprocess
 
 from dotenv import load_dotenv
@@ -104,38 +103,50 @@ def ask_ai(prompt):
 
 def try_execute_tool(response):
     try:
-        blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
+        def extract_json_blocks(text):
+            blocks = []
+            depth = 0
+            start = None
 
+            for index, char in enumerate(text):
+                if char == "{":
+                    if depth == 0:
+                        start = index
+                    depth += 1
+                elif char == "}":
+                    if depth > 0:
+                        depth -= 1
+                        if depth == 0 and start is not None:
+                            blocks.append(text[start:index + 1])
+                            start = None
+
+            return blocks
+
+        blocks = extract_json_blocks(response)
         results = []
 
         for block in blocks:
             try:
                 data = json.loads(block)
-
-                tool = data.get("tool")
-                args = data.get("args", {})
-
-                if tool == "create_file":
-                    results.append(create_file(args.get("filename")))
-
-                elif tool == "read_file":
-                    results.append(read_file(args.get("filename")))
-
-                elif tool == "delete_file":
-                    results.append(delete_file(args.get("filename")))
-
-                elif tool == "git_pull":
-                    results.append(git_pull())
-
-                elif tool == "restart":
-                    results.append(restart_agent())
-
-            except:
+            except Exception:
                 continue
+
+            tool = data.get("tool")
+            args = data.get("args", {})
+
+            if tool == "create_file":
+                results.append(create_file(args.get("filename")))
+            elif tool == "read_file":
+                results.append(read_file(args.get("filename")))
+            elif tool == "delete_file":
+                results.append(delete_file(args.get("filename")))
+            elif tool == "git_pull":
+                results.append(git_pull())
+            elif tool == "restart":
+                results.append(restart_agent())
 
         if results:
             return "\n".join(results)
-
         return None
 
     except:
@@ -163,7 +174,9 @@ async def handle(update, context):
             return
 
     ai_response = ask_ai(text)
+    print("AI:", ai_response)
     result = try_execute_tool(ai_response)
+    print("RESULT:", result)
 
     if result is not None:
         await update.message.reply_text(result)
