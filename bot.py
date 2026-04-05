@@ -2,7 +2,6 @@ import json
 import os
 import subprocess
 import asyncio
-import re
 import signal
 import sys
 from pathlib import Path
@@ -20,148 +19,56 @@ BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 MEMORY_FILE = "/Users/oleksandr_ishcheko/ai-agent/memory.json"
 
-AGENT_PROMPT = """Ти локальний AI-агент.
-Ти виконуєш дії через tools.
-Ти можеш виконувати кілька дій.
-
-Доступні інструменти:
-- create_file(filename)
-- read_file(filename)
-- delete_file(filename)
-- write_file(filename, content)
-- append_file(filename, content)
-- create_directory(path)
-- delete_directory(path)
-- list_files()
-- search_files(query)
-- read_logs(lines=50)
-- system_info()
-- current_time()
-- fetch_url(url)
-- git_pull()
-- restart()
-- remember(key, value)
-- recall(key)
-- list_memory()
-- delete_memory(key)
-
-Ти НЕ пояснюєш.
-Ти виконуєш.
-
-Поверни JSON список:
-[
-  {"tool": "...", "args": {...}}
+TOOL_SIGNATURES = [
+    "create_file(filename)",
+    "read_file(filename)",
+    "delete_file(filename)",
+    "write_file(filename, content)",
+    "append_file(filename, content)",
+    "create_directory(path)",
+    "delete_directory(path)",
+    "list_files()",
+    "search_files(query)",
+    "read_logs(lines=50)",
+    "system_info()",
+    "current_time()",
+    "fetch_url(url)",
+    "git_pull()",
+    "restart()",
+    "remember(key, value)",
+    "recall(key)",
+    "list_memory()",
+    "delete_memory(key)",
 ]
 
-ПРИКЛАДИ:
+AGENT_PROMPT = f"""Ти універсальний AI агент.
 
-Запит: "створи файл test.txt"
-Відповідь:
-[
-  {"tool": "create_file", "args": {"filename": "test.txt"}}
-]
-
-Запит: "прочитай файл test.txt"
-Відповідь:
-[
-  {"tool": "read_file", "args": {"filename": "test.txt"}}
-]
-
-Запит: "видали файл test.txt"
-Відповідь:
-[
-  {"tool": "delete_file", "args": {"filename": "test.txt"}}
-]
-
-Запит: "покажи файли"
-Відповідь:
-[
-  {"tool": "list_files", "args": {}}
-]
-
-Запит: "онови код"
-Відповідь:
-[
-  {"tool": "git_pull", "args": {}}
-]
-
-Запит: "перезапусти"
-Відповідь:
-[
-  {"tool": "restart", "args": {}}
-]
-
-Запит: "запамʼятай що порт 8080"
-Відповідь:
-[
-  {"tool": "remember", "args": {"key": "порт", "value": "8080"}}
-]
-
-Запит: "який у мене порт"
-Відповідь:
-[
-  {"tool": "recall", "args": {"key": "порт"}}
-]
-
-Запит: "покажи памʼять"
-Відповідь:
-[
-  {"tool": "list_memory", "args": {}}
-]
-
-Запит: "додай текст у файл"
-Відповідь:
-[
-  {"tool": "append_file", "args": {"filename": "test.txt", "content": "новий рядок"}}
-]
-
-Запит: "знайди слово"
-Відповідь:
-[
-  {"tool": "search_files", "args": {"query": "слово"}}
-]
-
-Запит: "покажи лог"
-Відповідь:
-[
-  {"tool": "read_logs", "args": {"lines": 50}}
-]
-
-Запит: "стан системи"
-Відповідь:
-[
-  {"tool": "system_info", "args": {}}
-]
-
-Запит: "котра година"
-Відповідь:
-[
-  {"tool": "current_time", "args": {}}
-]
-
-Запит: "відкрий сайт"
-Відповідь:
-[
-  {"tool": "fetch_url", "args": {"url": "https://example.com"}}
-]
-
-Запит: "видали з памʼяті"
-Відповідь:
-[
-  {"tool": "delete_memory", "args": {"key": "порт"}}
-]
-
-Запит: "онови код і перезапустися"
-Відповідь:
-[
-  {"tool": "git_pull", "args": {}},
-  {"tool": "restart", "args": {}}
-]
+Ти можеш:
+1. Відповідати на питання
+2. Виконувати дії через інструменти
+3. Робити кілька кроків
 
 ---
 
-Якщо НЕ зрозумів → відповідай:
-"Я не можу виконати цю дію"
+ДОСТУПНІ ІНСТРУМЕНТИ:
+{chr(10).join(f"- {tool}" for tool in TOOL_SIGNATURES)}
+
+---
+
+ПРАВИЛА:
+
+1. Якщо потрібно просто відповісти → текст
+
+2. Якщо потрібно діяти → поверни JSON:
+[
+  {{"tool": "...", "args": {{...}}}}
+]
+
+3. Якщо кілька кроків → список
+
+4. НЕ вигадуй інструменти
+
+5. Якщо не знаєш → відповідай текстом
 """
 
 AI_PROMPT = """Ти AI асистент.
@@ -554,136 +461,99 @@ def auto_remember_from_text(text):
     return remember(key, value)
 
 
-def has_word(text, word):
-    return re.search(rf"\b{word}\b", text) is not None
-
-
-def detect_intent(text):
-    t = text.lower().strip()
-
-    # --- exact ---
-    if t in ["інструменти", "tools", "що ти вмієш"]:
-        return "tools"
-
-    if t in ["покажи файли", "список файлів", "які файли є"]:
-        return "list_files"
-
-    # --- system ---
-    if has_word(t, "час"):
-        if has_word(t, "котра") or has_word(t, "який"):
-            return "time"
-
-    if has_word(t, "стан") and has_word(t, "системи"):
-        return "system_info"
-
-    # --- combined ---
-    if has_word(t, "онови") and has_word(t, "код") and (
-        has_word(t, "перезапусти") or has_word(t, "перезавантаж")
-    ):
-        return "update_and_restart"
-
-    # --- single ---
-    if has_word(t, "онови") and has_word(t, "код"):
-        return "git_pull"
-
-    if has_word(t, "перезапусти") or has_word(t, "перезавантаж"):
-        return "restart"
-
-    return None
-
-
 def execute_tool(tool, args):
-    if tool == "create_file":
-        return create_file(args.get("filename"))
+    try:
+        if tool == "create_file":
+            return create_file(args.get("filename"))
 
-    if tool == "read_file":
-        return read_file(args.get("filename"))
+        if tool == "read_file":
+            return read_file(args.get("filename"))
 
-    if tool == "delete_file":
-        return delete_file(args.get("filename"))
+        if tool == "delete_file":
+            return delete_file(args.get("filename"))
 
-    if tool == "write_file":
-        return write_file(args.get("filename"), args.get("content", ""))
+        if tool == "write_file":
+            return write_file(args.get("filename"), args.get("content", ""))
 
-    if tool == "append_file":
-        return append_file(args.get("filename"), args.get("content", ""))
+        if tool == "append_file":
+            return append_file(args.get("filename"), args.get("content", ""))
 
-    if tool == "create_directory":
-        return create_directory(args.get("path"))
+        if tool == "create_directory":
+            return create_directory(args.get("path"))
 
-    if tool == "delete_directory":
-        return delete_directory(args.get("path"))
+        if tool == "delete_directory":
+            return delete_directory(args.get("path"))
 
-    if tool == "list_files":
-        return list_files()
+        if tool == "list_files":
+            return list_files()
 
-    if tool == "search_files":
-        return search_files(args.get("query", ""))
+        if tool == "search_files":
+            return search_files(args.get("query", ""))
 
-    if tool == "read_logs":
-        return read_logs(args.get("lines", 50))
+        if tool == "read_logs":
+            return read_logs(args.get("lines", 50))
 
-    if tool == "system_info":
-        return system_info()
+        if tool == "system_info":
+            return system_info()
 
-    if tool == "current_time":
-        return current_time()
+        if tool == "current_time":
+            return current_time()
 
-    if tool == "fetch_url":
-        return fetch_url(args.get("url", ""))
+        if tool == "fetch_url":
+            return fetch_url(args.get("url", ""))
 
-    if tool == "git_pull":
-        return git_pull()
+        if tool == "git_pull":
+            return git_pull()
 
-    if tool == "restart":
-        return restart_agent()
+        if tool == "restart":
+            return restart_agent()
 
-    if tool == "remember":
-        return remember(args.get("key"), args.get("value"))
+        if tool == "remember":
+            return remember(args.get("key"), args.get("value"))
 
-    if tool == "recall":
-        return recall(args.get("key"))
+        if tool == "recall":
+            return recall(args.get("key"))
 
-    if tool == "list_memory":
-        return list_memory()
+        if tool == "list_memory":
+            return list_memory()
 
-    if tool == "delete_memory":
-        return delete_memory(args.get("key"))
+        if tool == "delete_memory":
+            return delete_memory(args.get("key"))
 
-    return f"❌ Невідомий інструмент: {tool}"
+        return f"❌ Невідомий інструмент: {tool}"
+    except Exception as error:
+        return f"❌ Помилка інструмента {tool}: {error}"
 
 
 def try_execute_tool(response):
+    response = response.strip()
+    if not response.startswith("["):
+        return None
+
     try:
-        response = response.strip()
-
-        if not response.startswith("["):
-            return None
-
         data = json.loads(response)
+    except json.JSONDecodeError as error:
+        return f"❌ Некоректний JSON від AI: {error}"
 
-        if not isinstance(data, list):
-            return None
+    if not isinstance(data, list):
+        return "❌ Очікувався список кроків у форматі JSON-масиву."
 
-        results = []
-        git_result = ""
+    results = []
+    for index, step in enumerate(data, start=1):
+        if not isinstance(step, dict):
+            results.append(f"Крок {index}: ❌ Некоректний крок (очікувався об'єкт).")
+            continue
 
-        for item in data:
-            tool = item.get("tool")
-            args = item.get("args", {})
-            if tool == "restart" and "Already up to date" in git_result:
-                continue
+        tool = step.get("tool")
+        args = step.get("args", {})
+        if not isinstance(args, dict):
+            results.append(f"Крок {index}: ❌ Некоректні args (очікувався об'єкт).")
+            continue
 
-            result = execute_tool(tool, args)
-            results.append(result)
+        result = execute_tool(tool, args)
+        results.append(f"Крок {index} ({tool}): {result}")
 
-            if tool == "git_pull":
-                git_result = result
-
-        return "\n".join(results)
-
-    except Exception as e:
-        return f"❌ Executor error: {str(e)}"
+    return "\n".join(results) if results else "✅ Немає кроків для виконання."
 
 
 async def handle(update, context):
@@ -691,69 +561,14 @@ async def handle(update, context):
     save_last_chat_id(update.effective_chat.id)
     auto_remember_from_text(text)
 
-    intent = detect_intent(text)
-
-    if intent == "tools":
-        await update.message.reply_text(
-            "🛠 Доступні інструменти:\n\n"
-            "📂 Файли:\n"
-            "- create_file\n"
-            "- read_file\n"
-            "- delete_file\n"
-            "- write_file\n"
-            "- list_files\n\n"
-            "🔄 Система:\n"
-            "- git_pull\n"
-            "- restart\n\n"
-            "🧠 Памʼять:\n"
-            "- remember\n"
-            "- recall\n"
-            "- list_memory"
-        )
-        return
-
-    if intent == "git_pull":
-        await update.message.reply_text(git_pull())
-        return
-
-    if intent == "restart":
-        await update.message.reply_text(restart_agent())
-        return
-
-    if intent == "update_and_restart":
-        result = git_pull()
-
-        if "Already up to date" not in result:
-            result += "\n" + restart_agent()
-        else:
-            result += "\n♻️ Перезапуск не потрібен"
-
-        await update.message.reply_text(result)
-        return
-
-    if intent == "list_files":
-        await update.message.reply_text(list_files())
-        return
-
-    if intent == "system_info":
-        await update.message.reply_text(system_info())
-        return
-
-    if intent == "time":
-        await update.message.reply_text(current_time())
-        return
-
     ai_response = ask_ai(text, mode="agent")
-    print("MODE: AGENT")
-    print("AI RESPONSE:", ai_response)
     result = try_execute_tool(ai_response)
-    print("RESULT:", result)
 
     if result is not None:
         await update.message.reply_text(result)
         return
 
-    await update.message.reply_text("Я не можу виконати цю дію")
+    await update.message.reply_text(ai_response)
 
 
 async def ai_handler(update, context):
