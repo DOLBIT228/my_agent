@@ -554,34 +554,30 @@ def auto_remember_from_text(text):
 
 
 def detect_intent(text):
-    t = (text or "").lower()
+    t = (text or "").lower().strip()
 
-    update_keywords = ("онови код", "оновлення коду", "оновити код")
-    restart_keywords = ("перезапусти", "перезапуск", "рестарт")
-    list_files_keywords = ("покажи файли", "список файлів", "які файли")
-    system_info_keywords = ("стан системи", "системна інформація")
-    time_keywords = ("котра година", "яка година", "час зараз")
+    # ---- exact commands ----
+    if t in ["інструменти", "tools", "що ти вмієш"]:
+        return "tools"
 
-    has_update = any(keyword in t for keyword in update_keywords)
-    has_restart = any(keyword in t for keyword in restart_keywords)
-
-    if has_update and has_restart:
-        return "update_and_restart"
-
-    if has_update:
-        return "git_pull"
-
-    if has_restart:
-        return "restart"
-
-    if any(keyword in t for keyword in list_files_keywords):
+    if t in ["покажи файли", "список файлів", "які файли є"]:
         return "list_files"
 
-    if any(keyword in t for keyword in system_info_keywords):
+    if t in ["стан системи", "нагрузка системи"]:
         return "system_info"
 
-    if any(keyword in t for keyword in time_keywords):
+    if t in ["котра година", "який час", "час зараз"]:
         return "time"
+
+    # ---- flexible commands ----
+    if "онови код" in t and "перезапусти" in t:
+        return "update_and_restart"
+
+    if "онови код" in t:
+        return "git_pull"
+
+    if "перезапусти" in t or "перезавантаж" in t:
+        return "restart"
 
     return None
 
@@ -685,11 +681,26 @@ async def handle(update, context):
     save_last_chat_id(update.effective_chat.id)
     auto_remember_from_text(text)
 
-    if text.lower() in ["інструменти", "tools", "що ти вмієш"]:
-        await update.message.reply_text(TOOLS_HELP_TEXT)
-        return
-
     intent = detect_intent(text)
+
+    if intent == "tools":
+        await update.message.reply_text(
+            "🛠 Доступні інструменти:\n\n"
+            "📂 Файли:\n"
+            "- create_file\n"
+            "- read_file\n"
+            "- delete_file\n"
+            "- write_file\n"
+            "- list_files\n\n"
+            "🔄 Система:\n"
+            "- git_pull\n"
+            "- restart\n\n"
+            "🧠 Памʼять:\n"
+            "- remember\n"
+            "- recall\n"
+            "- list_memory"
+        )
+        return
 
     if intent == "git_pull":
         await update.message.reply_text(git_pull())
