@@ -612,6 +612,17 @@ VALID_TOOLS = {
 }
 
 
+def is_complex_task(text):
+    keywords = ["і", "та", "потім", "спочатку"]
+    lowered = text.lower()
+
+    for keyword in keywords:
+        if keyword in lowered:
+            return True
+
+    return False
+
+
 def validate_plan(plan_json):
     try:
         data = json.loads(plan_json)
@@ -663,6 +674,67 @@ def auto_remember_from_text(text):
     return remember(key, value)
 
 
+def execute_tool(tool, args):
+    if tool == "create_file":
+        return create_file(args.get("filename"))
+
+    if tool == "read_file":
+        return read_file(args.get("filename"))
+
+    if tool == "delete_file":
+        return delete_file(args.get("filename"))
+
+    if tool == "write_file":
+        return write_file(args.get("filename"), args.get("content", ""))
+
+    if tool == "append_file":
+        return append_file(args.get("filename"), args.get("content", ""))
+
+    if tool == "create_directory":
+        return create_directory(args.get("path"))
+
+    if tool == "delete_directory":
+        return delete_directory(args.get("path"))
+
+    if tool == "list_files":
+        return list_files()
+
+    if tool == "search_files":
+        return search_files(args.get("query", ""))
+
+    if tool == "read_logs":
+        return read_logs(args.get("lines", 50))
+
+    if tool == "system_info":
+        return system_info()
+
+    if tool == "current_time":
+        return current_time()
+
+    if tool == "fetch_url":
+        return fetch_url(args.get("url", ""))
+
+    if tool == "git_pull":
+        return git_pull()
+
+    if tool == "restart":
+        return restart_agent()
+
+    if tool == "remember":
+        return remember(args.get("key"), args.get("value"))
+
+    if tool == "recall":
+        return recall(args.get("key"))
+
+    if tool == "list_memory":
+        return list_memory()
+
+    if tool == "delete_memory":
+        return delete_memory(args.get("key"))
+
+    return f"❌ Невідомий інструмент: {tool}"
+
+
 def try_execute_tool(response):
     try:
         response = response.strip()
@@ -681,71 +753,14 @@ def try_execute_tool(response):
         for item in data:
             tool = item.get("tool")
             args = item.get("args", {})
+            if tool == "restart" and "Already up to date" in git_result:
+                continue
 
-            if tool == "create_file":
-                results.append(create_file(args.get("filename")))
+            result = execute_tool(tool, args)
+            results.append(result)
 
-            elif tool == "read_file":
-                results.append(read_file(args.get("filename")))
-
-            elif tool == "delete_file":
-                results.append(delete_file(args.get("filename")))
-
-            elif tool == "write_file":
-                results.append(write_file(
-                    args.get("filename"),
-                    args.get("content", "")
-                ))
-
-            elif tool == "append_file":
-                results.append(append_file(
-                    args.get("filename"),
-                    args.get("content", "")
-                ))
-
-            elif tool == "create_directory":
-                results.append(create_directory(args.get("path")))
-
-            elif tool == "delete_directory":
-                results.append(delete_directory(args.get("path")))
-
-            elif tool == "list_files":
-                results.append(list_files())
-
-            elif tool == "search_files":
-                results.append(search_files(args.get("query", "")))
-
-            elif tool == "read_logs":
-                results.append(read_logs(args.get("lines", 50)))
-
-            elif tool == "system_info":
-                results.append(system_info())
-
-            elif tool == "current_time":
-                results.append(current_time())
-
-            elif tool == "fetch_url":
-                results.append(fetch_url(args.get("url", "")))
-
-            elif tool == "git_pull":
-                git_result = git_pull()
-                results.append(git_result)
-
-            elif tool == "restart":
-                if "Already up to date" not in git_result:
-                    results.append(restart_agent())
-
-            elif tool == "remember":
-                results.append(remember(args.get("key"), args.get("value")))
-
-            elif tool == "recall":
-                results.append(recall(args.get("key")))
-
-            elif tool == "list_memory":
-                results.append(list_memory())
-
-            elif tool == "delete_memory":
-                results.append(delete_memory(args.get("key")))
+            if tool == "git_pull":
+                git_result = result
 
         return "\n".join(results)
 
@@ -760,6 +775,24 @@ async def handle(update, context):
 
     if text.lower() in ["інструменти", "tools", "що ти вмієш"]:
         await update.message.reply_text(TOOLS_HELP_TEXT)
+        return
+
+    if is_complex_task(text):
+        print("MODE: PLANNER")
+        raw_plan = plan_task(text)
+        validated = validate_plan(raw_plan)
+
+        if isinstance(validated, str):
+            await update.message.reply_text("❌ Не вдалося побудувати план")
+            return
+
+        results = []
+        for step in validated:
+            tool = step.get("tool")
+            args = step.get("args", {})
+            results.append(execute_tool(tool, args))
+
+        await update.message.reply_text("\n".join(results))
         return
 
     ai_response = ask_ai(text, mode="agent")
