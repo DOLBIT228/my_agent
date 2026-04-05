@@ -553,6 +553,39 @@ def auto_remember_from_text(text):
     return remember(key, value)
 
 
+def detect_intent(text):
+    t = (text or "").lower()
+
+    update_keywords = ("онови код", "оновлення коду", "оновити код")
+    restart_keywords = ("перезапусти", "перезапуск", "рестарт")
+    list_files_keywords = ("покажи файли", "список файлів", "які файли")
+    system_info_keywords = ("стан системи", "системна інформація")
+    time_keywords = ("котра година", "яка година", "час зараз")
+
+    has_update = any(keyword in t for keyword in update_keywords)
+    has_restart = any(keyword in t for keyword in restart_keywords)
+
+    if has_update and has_restart:
+        return "update_and_restart"
+
+    if has_update:
+        return "git_pull"
+
+    if has_restart:
+        return "restart"
+
+    if any(keyword in t for keyword in list_files_keywords):
+        return "list_files"
+
+    if any(keyword in t for keyword in system_info_keywords):
+        return "system_info"
+
+    if any(keyword in t for keyword in time_keywords):
+        return "time"
+
+    return None
+
+
 def execute_tool(tool, args):
     if tool == "create_file":
         return create_file(args.get("filename"))
@@ -654,6 +687,39 @@ async def handle(update, context):
 
     if text.lower() in ["інструменти", "tools", "що ти вмієш"]:
         await update.message.reply_text(TOOLS_HELP_TEXT)
+        return
+
+    intent = detect_intent(text)
+
+    if intent == "git_pull":
+        await update.message.reply_text(git_pull())
+        return
+
+    if intent == "restart":
+        await update.message.reply_text(restart_agent())
+        return
+
+    if intent == "update_and_restart":
+        result = git_pull()
+
+        if "Already up to date" not in result:
+            result += "\n" + restart_agent()
+        else:
+            result += "\n♻️ Перезапуск не потрібен"
+
+        await update.message.reply_text(result)
+        return
+
+    if intent == "list_files":
+        await update.message.reply_text(list_files())
+        return
+
+    if intent == "system_info":
+        await update.message.reply_text(system_info())
+        return
+
+    if intent == "time":
+        await update.message.reply_text(current_time())
         return
 
     ai_response = ask_ai(text, mode="agent")
