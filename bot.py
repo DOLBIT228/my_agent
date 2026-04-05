@@ -554,6 +554,48 @@ def plan_task(prompt):
     return response.choices[0].message.content
 
 
+def fix_plan(original_prompt, error_message):
+    if not GROQ_API_KEY:
+        return "GROQ_API_KEY не встановлено"
+
+    client = Groq(api_key=GROQ_API_KEY)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": f"""
+Ти виправляєш план задачі.
+
+Помилка:
+{error_message}
+
+Ти МОЖЕШ використовувати ТІЛЬКИ ці інструменти:
+
+- create_file
+- read_file
+- delete_file
+- write_file
+- append_file
+- list_files
+- git_pull
+- restart
+- remember
+- recall
+- list_memory
+- delete_memory
+
+Поверни правильний JSON список.
+НЕ використовуй touch, echo або bash.
+"""
+            },
+            {"role": "user", "content": original_prompt}
+        ]
+    )
+
+    return response.choices[0].message.content
+
+
 VALID_TOOLS = {
     "create_file",
     "read_file",
@@ -764,8 +806,12 @@ async def plan_handler(update, context):
     validated = validate_plan(raw_plan)
 
     if isinstance(validated, str):
-        await update.message.reply_text(validated)
-        return
+        fixed_plan = fix_plan(text, validated)
+        validated = validate_plan(fixed_plan)
+
+        if isinstance(validated, str):
+            await update.message.reply_text("❌ Не вдалося побудувати план")
+            return
 
     await update.message.reply_text(
         json.dumps(validated, indent=2, ensure_ascii=False)
