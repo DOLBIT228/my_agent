@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import asyncio
 import signal
@@ -18,27 +19,29 @@ DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 
-AGENT_PROMPT = """Ти AI-агент.
+AGENT_PROMPT = """Ти локальний AI-агент.
 Ти виконуєш дії через tools.
 
 Доступні інструменти:
-- create_file
-- read_file
-- delete_file
-- git_pull
-- restart
+- create_file(filename)
+- read_file(filename)
+- delete_file(filename)
+- write_file(filename, content)
+- list_files()
+- git_pull()
+- restart()
 
 Ти НЕ пояснюєш.
 Ти виконуєш.
+
+Якщо дія потрібна → JSON:
+{"tool": "...", "args": {...}}
 """
 
 AI_PROMPT = """Ти AI асистент.
-
-Ти відповідаєш на питання користувача українською мовою.
+Ти відповідаєш українською.
 Ти НЕ маєш доступу до інструментів.
 Ти НЕ вигадуєш інструменти.
-
-Ти просто даєш відповідь.
 """
 
 
@@ -70,6 +73,28 @@ def delete_file(filename):
     return f"Видалено: {filename}"
 
 
+def write_file(filename, content):
+    filename = os.path.basename(filename)
+    filepath = os.path.join(BASE_DIR, filename)
+    with open(filepath, "w", encoding="utf-8") as file:
+        file.write(content if content is not None else "")
+    return f"Записано: {filename}"
+
+
+def list_files():
+    try:
+        files = sorted(
+            name for name in os.listdir(BASE_DIR)
+            if os.path.isfile(os.path.join(BASE_DIR, name))
+        )
+    except Exception as error:
+        return f"Помилка list_files: {error}"
+
+    if not files:
+        return "(файлів немає)"
+    return "\n".join(files)
+
+
 
 
 def git_pull():
@@ -78,8 +103,6 @@ def git_pull():
             "cd /Users/oleksandr_ishcheko/ai-agent && git pull",
             shell=True
         ).decode()
-        if "Already up to date" in output:
-            return "Оновлень немає"
         return output
     except Exception as e:
         return f"Помилка git pull: {e}"
@@ -200,28 +223,20 @@ def ask_ai(prompt, mode="agent"):
 
 def try_execute_tool(response):
     try:
-        def extract_json_blocks(text):
-            blocks = []
-            depth = 0
-            start = None
-
-            for index, char in enumerate(text):
-                if char == "{":
-                    if depth == 0:
-                        start = index
-                    depth += 1
-                elif char == "}":
-                    if depth > 0:
-                        depth -= 1
-                        if depth == 0 and start is not None:
-                            blocks.append(text[start:index + 1])
-                            start = None
-
-            return blocks
-
-        blocks = extract_json_blocks(response)
+        fenced_json = re.findall(r"```json\s*(\{[\s\S]*?\})\s*```", response, flags=re.IGNORECASE)
+        inline_json = re.findall(r"(\{[\s\S]*?\})", response)
+        blocks = fenced_json if fenced_json else inline_json
         results = []
         git_result = None
+        allowed_tools = {
+            "create_file",
+            "read_file",
+            "delete_file",
+            "write_file",
+            "list_files",
+            "git_pull",
+            "restart",
+        }
 
         for block in blocks:
             try:
@@ -232,17 +247,24 @@ def try_execute_tool(response):
             tool = data.get("tool")
             args = data.get("args", {})
 
+            if tool not in allowed_tools:
+                continue
+
             if tool == "create_file":
                 results.append(create_file(args.get("filename")))
             elif tool == "read_file":
                 results.append(read_file(args.get("filename")))
             elif tool == "delete_file":
                 results.append(delete_file(args.get("filename")))
+            elif tool == "write_file":
+                results.append(write_file(args.get("filename"), args.get("content")))
+            elif tool == "list_files":
+                results.append(list_files())
             elif tool == "git_pull":
                 git_result = git_pull()
                 results.append(git_result)
             elif tool == "restart":
-                if git_result and "Оновлень немає" in git_result:
+                if git_result and "Already up to date" in git_result:
                     continue
                 results.append("ℹ️ Отримано команду на перезапуск. Перезапускаюся...")
                 results.append(restart_agent())
@@ -281,6 +303,23 @@ async def ai_handler(update, context):
     await update.message.reply_text(response)
 
 
+async def tools_handler(update, context):
+    await update.message.reply_text(
+        "Доступні інструменти:\n"
+        "- create_file(filename)\n"
+        "- read_file(filename)\n"
+        "- delete_file(filename)\n"
+        "- write_file(filename, content)\n"
+        "- list_files()\n"
+        "- git_pull()\n"
+        "- restart()"
+    )
+
+
+async def status_handler(update, context):
+    await update.message.reply_text("Агент активний")
+
+
 def main():
     if not TOKEN:
         raise RuntimeError("TOKEN не встановлено у файлі .env")
@@ -292,6 +331,8 @@ def main():
         .build()
     )
     app.add_handler(CommandHandler("ai", ai_handler))
+    app.add_handler(CommandHandler("tools", tools_handler))
+    app.add_handler(CommandHandler("status", status_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
