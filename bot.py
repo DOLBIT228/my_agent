@@ -554,7 +554,7 @@ def auto_remember_from_text(text):
 
 
 def detect_intent(text):
-    t = (text or "").lower().strip()
+    t = text.lower().strip()
 
     # ---- exact commands ----
     if t in ["інструменти", "tools", "що ти вмієш"]:
