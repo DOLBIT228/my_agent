@@ -119,6 +119,30 @@ AI_PROMPT = """Ти AI асистент.
 Ти НЕ вигадуєш інструменти.
 """
 
+MEMORY_DECIDER_PROMPT = """Ти модуль smart memory.
+Оціни повідомлення користувача і виріши, чи треба це зберегти в памʼять.
+
+Зберігати ТІЛЬКИ:
+- налаштування користувача
+- конфігурації
+- важливі довготривалі факти
+
+НЕ зберігати:
+- випадкові одноразові прохання
+- загальні питання
+- тимчасовий контекст розмови
+
+Формат відповіді:
+- якщо зберігати не треба: NONE
+- якщо зберігати треба: JSON обʼєкт
+{
+  "key": "...",
+  "value": "..."
+}
+
+Без пояснень. Тільки NONE або JSON.
+"""
+
 
 def create_file(filename):
     filename = os.path.basename(filename)
@@ -312,6 +336,8 @@ def ask_ai(prompt, mode="agent"):
 
     if mode == "agent":
         system_prompt = AGENT_PROMPT
+    elif mode == "memory":
+        system_prompt = MEMORY_DECIDER_PROMPT
     else:
         system_prompt = AI_PROMPT
 
@@ -325,6 +351,38 @@ def ask_ai(prompt, mode="agent"):
         temperature=0,
     )
     return response.choices[0].message.content or ""
+
+
+def extract_memory_candidate(text):
+    response = ask_ai(text, mode="memory").strip()
+
+    if response == "NONE":
+        return None
+
+    try:
+        data = json.loads(response)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    key = str(data.get("key", "")).strip()
+    value = str(data.get("value", "")).strip()
+
+    if not key or not value:
+        return None
+
+    return key, value
+
+
+def auto_remember_from_text(text):
+    memory_pair = extract_memory_candidate(text)
+    if memory_pair is None:
+        return None
+
+    key, value = memory_pair
+    return remember(key, value)
 
 
 def try_execute_tool(response):
@@ -385,6 +443,7 @@ def try_execute_tool(response):
 async def handle(update, context):
     text = update.message.text or ""
     save_last_chat_id(update.effective_chat.id)
+    auto_remember_from_text(text)
 
     ai_response = ask_ai(text, mode="agent")
     print("MODE: AGENT")
@@ -405,6 +464,7 @@ async def ai_handler(update, context):
         await update.message.reply_text("Введи запит після /ai")
         return
 
+    auto_remember_from_text(prompt)
     response = ask_ai(prompt, mode="chat")
     await update.message.reply_text(response)
 
