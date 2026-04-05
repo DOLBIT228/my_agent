@@ -554,6 +554,41 @@ def plan_task(prompt):
     return response.choices[0].message.content
 
 
+VALID_TOOLS = {
+    "create_file",
+    "read_file",
+    "delete_file",
+    "write_file",
+    "append_file",
+    "list_files",
+    "git_pull",
+    "restart",
+    "remember",
+    "recall",
+    "list_memory",
+    "delete_memory",
+}
+
+
+def validate_plan(plan_json):
+    try:
+        data = json.loads(plan_json)
+
+        if not isinstance(data, list):
+            return "❌ Невірний формат плану"
+
+        for step in data:
+            tool = step.get("tool")
+
+            if tool not in VALID_TOOLS:
+                return f"❌ Невідомий інструмент у плані: {tool}"
+
+        return data
+
+    except Exception as e:
+        return f"❌ Помилка плану: {str(e)}"
+
+
 def extract_memory_candidate(text):
     response = ask_ai(text, mode="memory").strip()
 
@@ -725,8 +760,16 @@ async def plan_handler(update, context):
         await update.message.reply_text("Введи задачу")
         return
 
-    plan = plan_task(text)
-    await update.message.reply_text(plan)
+    raw_plan = plan_task(text)
+    validated = validate_plan(raw_plan)
+
+    if isinstance(validated, str):
+        await update.message.reply_text(validated)
+        return
+
+    await update.message.reply_text(
+        json.dumps(validated, indent=2, ensure_ascii=False)
+    )
 
 
 def main():
