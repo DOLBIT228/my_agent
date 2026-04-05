@@ -223,6 +223,8 @@ TOOLS_HELP_TEXT = (
     "- delete_memory"
 )
 
+DEPENDENCY_NOTE = "Dependency note: beautifulsoup4 required."
+
 
 def create_file(filename):
     filename = os.path.basename(filename)
@@ -335,11 +337,21 @@ def current_time():
 
 
 def fetch_url(url):
+    # Dependency note: beautifulsoup4 required
+    import requests
+    from bs4 import BeautifulSoup
+
     try:
-        response = requests.get(url, timeout=5)
-        return response.text[:1000]
-    except Exception:
-        return "❌ Не вдалося отримати URL"
+        r = requests.get(url, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        text = soup.get_text(separator="\n")
+        text = "\n".join(text.splitlines())
+
+        return text[:1000]
+
+    except Exception as e:
+        return f"❌ Помилка: {str(e)}"
 
 
 def load_memory():
