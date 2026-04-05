@@ -21,6 +21,7 @@ MEMORY_FILE = "/Users/oleksandr_ishcheko/ai-agent/memory.json"
 
 AGENT_PROMPT = """Ти локальний AI-агент.
 Ти виконуєш дії через tools.
+Ти можеш виконувати кілька дій.
 
 Доступні інструменти:
 - create_file(filename)
@@ -46,12 +47,10 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 Ти НЕ пояснюєш.
 Ти виконуєш.
 
-Якщо дія потрібна → ALWAYS return JSON ARRAY:
+Поверни JSON список:
 [
   {"tool": "...", "args": {...}}
 ]
-
----
 
 ПРИКЛАДИ:
 
@@ -522,126 +521,6 @@ def ask_ai(prompt, mode="agent"):
     return response.choices[0].message.content or ""
 
 
-def plan_task(prompt):
-    if not GROQ_API_KEY:
-        return "GROQ_API_KEY не встановлено"
-
-    client = Groq(api_key=GROQ_API_KEY)
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": """
-Ти планувальник задач.
-
-Твоя задача:
-розбити запит користувача на кроки.
-
-Поверни JSON список:
-
-[
-  {"step": "...", "tool": "...", "args": {...}}
-]
-
-НЕ пояснюй.
-"""
-            },
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
-
-def fix_plan(original_prompt, error_message):
-    if not GROQ_API_KEY:
-        return "GROQ_API_KEY не встановлено"
-
-    client = Groq(api_key=GROQ_API_KEY)
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": f"""
-Ти виправляєш план задачі.
-
-Помилка:
-{error_message}
-
-Ти МОЖЕШ використовувати ТІЛЬКИ ці інструменти:
-
-- create_file
-- read_file
-- delete_file
-- write_file
-- append_file
-- list_files
-- git_pull
-- restart
-- remember
-- recall
-- list_memory
-- delete_memory
-
-Поверни правильний JSON список.
-НЕ використовуй touch, echo або bash.
-"""
-            },
-            {"role": "user", "content": original_prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
-
-VALID_TOOLS = {
-    "create_file",
-    "read_file",
-    "delete_file",
-    "write_file",
-    "append_file",
-    "list_files",
-    "git_pull",
-    "restart",
-    "remember",
-    "recall",
-    "list_memory",
-    "delete_memory",
-}
-
-
-def is_complex_task(text):
-    keywords = ["і", "та", "потім", "спочатку"]
-    lowered = text.lower()
-
-    for keyword in keywords:
-        if keyword in lowered:
-            return True
-
-    return False
-
-
-def validate_plan(plan_json):
-    try:
-        data = json.loads(plan_json)
-
-        if not isinstance(data, list):
-            return "❌ Невірний формат плану"
-
-        for step in data:
-            tool = step.get("tool")
-
-            if tool not in VALID_TOOLS:
-                return f"❌ Невідомий інструмент у плані: {tool}"
-
-        return data
-
-    except Exception as e:
-        return f"❌ Помилка плану: {str(e)}"
-
-
 def extract_memory_candidate(text):
     response = ask_ai(text, mode="memory").strip()
 
@@ -777,24 +656,6 @@ async def handle(update, context):
         await update.message.reply_text(TOOLS_HELP_TEXT)
         return
 
-    if is_complex_task(text):
-        print("MODE: PLANNER")
-        raw_plan = plan_task(text)
-        validated = validate_plan(raw_plan)
-
-        if isinstance(validated, str):
-            await update.message.reply_text("❌ Не вдалося побудувати план")
-            return
-
-        results = []
-        for step in validated:
-            tool = step.get("tool")
-            args = step.get("args", {})
-            results.append(execute_tool(tool, args))
-
-        await update.message.reply_text("\n".join(results))
-        return
-
     ai_response = ask_ai(text, mode="agent")
     print("MODE: AGENT")
     print("AI RESPONSE:", ai_response)
@@ -828,29 +689,6 @@ async def status_handler(update, context):
     await update.message.reply_text("Агент активний")
 
 
-async def plan_handler(update, context):
-    text = " ".join(context.args)
-
-    if not text:
-        await update.message.reply_text("Введи задачу")
-        return
-
-    raw_plan = plan_task(text)
-    validated = validate_plan(raw_plan)
-
-    if isinstance(validated, str):
-        fixed_plan = fix_plan(text, validated)
-        validated = validate_plan(fixed_plan)
-
-        if isinstance(validated, str):
-            await update.message.reply_text("❌ Не вдалося побудувати план")
-            return
-
-    await update.message.reply_text(
-        json.dumps(validated, indent=2, ensure_ascii=False)
-    )
-
-
 def main():
     if not TOKEN:
         raise RuntimeError("TOKEN не встановлено у файлі .env")
@@ -862,8 +700,6 @@ def main():
         .build()
     )
     app.add_handler(CommandHandler("ai", ai_handler))
-    app.add_handler(CommandHandler("plan", plan_handler))
-    app.add_handler(CommandHandler("plans", plan_handler))
     app.add_handler(CommandHandler("tools", tools_handler))
     app.add_handler(CommandHandler("status", status_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
