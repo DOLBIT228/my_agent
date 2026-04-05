@@ -261,58 +261,58 @@ def ask_ai(prompt, mode="agent"):
 
 def try_execute_tool(response):
     try:
-        fenced_json = re.findall(r"```json\s*(\{[\s\S]*?\})\s*```", response, flags=re.IGNORECASE)
-        inline_json = re.findall(r"(\{[\s\S]*?\})", response)
-        blocks = fenced_json if fenced_json else inline_json
+        blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
+
         results = []
-        git_result = None
-        allowed_tools = {
-            "create_file",
-            "read_file",
-            "delete_file",
-            "write_file",
-            "list_files",
-            "git_pull",
-            "restart",
-        }
 
         for block in blocks:
             try:
                 data = json.loads(block)
-            except Exception:
-                continue
 
-            tool = data.get("tool")
-            args = data.get("args", {})
+                tool = data.get("tool")
+                args = data.get("args", {})
 
-            if tool not in allowed_tools:
-                continue
+                if tool == "create_file":
+                    filename = args.get("filename")
+                    if filename:
+                        results.append(create_file(filename))
 
-            if tool == "create_file":
-                results.append(create_file(args.get("filename")))
-            elif tool == "read_file":
-                results.append(read_file(args.get("filename")))
-            elif tool == "delete_file":
-                results.append(delete_file(args.get("filename")))
-            elif tool == "write_file":
-                results.append(write_file(args.get("filename"), args.get("content")))
-            elif tool == "list_files":
-                results.append(list_files())
-            elif tool == "git_pull":
-                git_result = git_pull()
-                results.append(git_result)
-            elif tool == "restart":
-                if git_result and "Already up to date" in git_result:
-                    continue
-                results.append("ℹ️ Отримано команду на перезапуск. Перезапускаюся...")
-                results.append(restart_agent())
+                elif tool == "read_file":
+                    filename = args.get("filename")
+                    if filename:
+                        results.append(read_file(filename))
+
+                elif tool == "delete_file":
+                    filename = args.get("filename")
+                    if filename:
+                        results.append(delete_file(filename))
+
+                elif tool == "write_file":
+                    filename = args.get("filename")
+                    content = args.get("content", "")
+                    if filename:
+                        results.append(write_file(filename, content))
+
+                elif tool == "list_files":
+                    results.append(list_files())
+
+                elif tool == "git_pull":
+                    git_result = git_pull()
+                    results.append(git_result)
+
+                elif tool == "restart":
+                    results.append(restart_agent())
+
+            except Exception as e:
+                results.append(f"❌ Помилка: {str(e)}")
 
         if results:
             return "\n".join(results)
+
         return None
 
-    except:
-        return None
+    except Exception as e:
+        return f"❌ Executor error: {str(e)}"
 
 
 async def handle(update, context):
