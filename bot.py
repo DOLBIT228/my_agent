@@ -17,6 +17,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
+MEMORY_FILE = "/Users/oleksandr_ishcheko/ai-agent/memory.json"
 
 AGENT_PROMPT = """Ти локальний AI-агент.
 Ти виконуєш дії через tools.
@@ -29,6 +30,9 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 - list_files()
 - git_pull()
 - restart()
+- remember(key, value)
+- recall(key)
+- list_memory()
 
 Ти НЕ пояснюєш.
 Ти виконуєш.
@@ -76,6 +80,24 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 Відповідь:
 [
   {"tool": "restart", "args": {}}
+]
+
+Запит: "запамʼятай що порт 8080"
+Відповідь:
+[
+  {"tool": "remember", "args": {"key": "порт", "value": "8080"}}
+]
+
+Запит: "який у мене порт"
+Відповідь:
+[
+  {"tool": "recall", "args": {"key": "порт"}}
+]
+
+Запит: "покажи памʼять"
+Відповідь:
+[
+  {"tool": "list_memory", "args": {}}
 ]
 
 Запит: "онови код і перезапустися"
@@ -146,6 +168,37 @@ def list_files():
     if not files:
         return "(файлів немає)"
     return "\n".join(files)
+
+
+def load_memory():
+    if not os.path.exists(MEMORY_FILE):
+        return {}
+    with open(MEMORY_FILE, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def save_memory(data):
+    with open(MEMORY_FILE, "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+
+
+def remember(key, value):
+    data = load_memory()
+    data[key] = value
+    save_memory(data)
+    return f"💾 Збережено: {key} = {value}"
+
+
+def recall(key):
+    data = load_memory()
+    return data.get(key, "❌ Немає такого запису")
+
+
+def list_memory():
+    data = load_memory()
+    if not data:
+        return "Памʼять порожня"
+    return "\n".join([f"{key}: {value}" for key, value in data.items()])
 
 
 
@@ -314,6 +367,15 @@ def try_execute_tool(response):
                 if "Already up to date" not in git_result:
                     results.append(restart_agent())
 
+            elif tool == "remember":
+                results.append(remember(args.get("key"), args.get("value")))
+
+            elif tool == "recall":
+                results.append(recall(args.get("key")))
+
+            elif tool == "list_memory":
+                results.append(list_memory())
+
         return "\n".join(results)
 
     except Exception as e:
@@ -356,7 +418,10 @@ async def tools_handler(update, context):
         "- write_file(filename, content)\n"
         "- list_files()\n"
         "- git_pull()\n"
-        "- restart()"
+        "- restart()\n"
+        "- remember(key, value)\n"
+        "- recall(key)\n"
+        "- list_memory()"
     )
 
 
