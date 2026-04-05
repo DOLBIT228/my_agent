@@ -143,6 +143,23 @@ MEMORY_DECIDER_PROMPT = """Ти модуль smart memory.
 Без пояснень. Тільки NONE або JSON.
 """
 
+TOOLS_HELP_TEXT = (
+    "🛠 Доступні інструменти:\n\n"
+    "📂 Файли:\n"
+    "- create_file\n"
+    "- read_file\n"
+    "- delete_file\n"
+    "- write_file\n"
+    "- list_files\n\n"
+    "🔄 Система:\n"
+    "- git_pull\n"
+    "- restart\n\n"
+    "🧠 Памʼять:\n"
+    "- remember\n"
+    "- recall\n"
+    "- list_memory"
+)
+
 
 def create_file(filename):
     filename = os.path.basename(filename)
@@ -387,6 +404,11 @@ def auto_remember_from_text(text):
 
 def try_execute_tool(response):
     try:
+        response = response.strip()
+
+        if not response.startswith("["):
+            return None
+
         data = json.loads(response)
 
         if not isinstance(data, list):
@@ -445,6 +467,10 @@ async def handle(update, context):
     save_last_chat_id(update.effective_chat.id)
     auto_remember_from_text(text)
 
+    if text.lower() in ["інструменти", "tools", "що ти вмієш"]:
+        await update.message.reply_text(TOOLS_HELP_TEXT)
+        return
+
     ai_response = ask_ai(text, mode="agent")
     print("MODE: AGENT")
     print("AI RESPONSE:", ai_response)
@@ -453,8 +479,9 @@ async def handle(update, context):
 
     if result is not None:
         await update.message.reply_text(result)
-    else:
-        await update.message.reply_text("Я не можу виконати цю дію")
+        return
+
+    await update.message.reply_text("Я не можу виконати цю дію")
 
 
 async def ai_handler(update, context):
@@ -470,19 +497,7 @@ async def ai_handler(update, context):
 
 
 async def tools_handler(update, context):
-    await update.message.reply_text(
-        "Доступні інструменти:\n"
-        "- create_file(filename)\n"
-        "- read_file(filename)\n"
-        "- delete_file(filename)\n"
-        "- write_file(filename, content)\n"
-        "- list_files()\n"
-        "- git_pull()\n"
-        "- restart()\n"
-        "- remember(key, value)\n"
-        "- recall(key)\n"
-        "- list_memory()"
-    )
+    await update.message.reply_text(TOOLS_HELP_TEXT)
 
 
 async def status_handler(update, context):
