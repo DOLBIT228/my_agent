@@ -27,12 +27,21 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 - read_file(filename)
 - delete_file(filename)
 - write_file(filename, content)
+- append_file(filename, content)
+- create_directory(path)
+- delete_directory(path)
 - list_files()
+- search_files(query)
+- read_logs(lines=50)
+- system_info()
+- current_time()
+- fetch_url(url)
 - git_pull()
 - restart()
 - remember(key, value)
 - recall(key)
 - list_memory()
+- delete_memory(key)
 
 Ти НЕ пояснюєш.
 Ти виконуєш.
@@ -100,6 +109,48 @@ AGENT_PROMPT = """Ти локальний AI-агент.
   {"tool": "list_memory", "args": {}}
 ]
 
+Запит: "додай текст у файл"
+Відповідь:
+[
+  {"tool": "append_file", "args": {"filename": "test.txt", "content": "новий рядок"}}
+]
+
+Запит: "знайди слово"
+Відповідь:
+[
+  {"tool": "search_files", "args": {"query": "слово"}}
+]
+
+Запит: "покажи лог"
+Відповідь:
+[
+  {"tool": "read_logs", "args": {"lines": 50}}
+]
+
+Запит: "стан системи"
+Відповідь:
+[
+  {"tool": "system_info", "args": {}}
+]
+
+Запит: "котра година"
+Відповідь:
+[
+  {"tool": "current_time", "args": {}}
+]
+
+Запит: "відкрий сайт"
+Відповідь:
+[
+  {"tool": "fetch_url", "args": {"url": "https://example.com"}}
+]
+
+Запит: "видали з памʼяті"
+Відповідь:
+[
+  {"tool": "delete_memory", "args": {"key": "порт"}}
+]
+
 Запит: "онови код і перезапустися"
 Відповідь:
 [
@@ -151,13 +202,25 @@ TOOLS_HELP_TEXT = (
     "- delete_file\n"
     "- write_file\n"
     "- list_files\n\n"
+    "- append_file\n"
+    "- create_directory\n"
+    "- delete_directory\n"
+    "- search_files\n\n"
+    "📜 Логи:\n"
+    "- read_logs\n\n"
+    "💻 Система:\n"
+    "- system_info\n"
+    "- current_time\n\n"
+    "🌐 Інтернет:\n"
+    "- fetch_url\n\n"
     "🔄 Система:\n"
     "- git_pull\n"
     "- restart\n\n"
     "🧠 Памʼять:\n"
     "- remember\n"
     "- recall\n"
-    "- list_memory"
+    "- list_memory\n"
+    "- delete_memory"
 )
 
 
@@ -197,6 +260,30 @@ def write_file(filename, content):
     return f"Записано: {filename}"
 
 
+def append_file(filename, content):
+    filename = os.path.basename(filename)
+    path = os.path.join(BASE_DIR, filename)
+    with open(path, "a", encoding="utf-8") as file:
+        file.write((content if content is not None else "") + "\n")
+    return f"➕ Додано в файл: {filename}"
+
+
+def create_directory(path):
+    path = os.path.basename(path)
+    full_path = os.path.join(BASE_DIR, path)
+    os.makedirs(full_path, exist_ok=True)
+    return f"📁 Створено папку: {path}"
+
+
+def delete_directory(path):
+    import shutil
+
+    path = os.path.basename(path)
+    full_path = os.path.join(BASE_DIR, path)
+    shutil.rmtree(full_path, ignore_errors=True)
+    return f"🗑 Видалено папку: {path}"
+
+
 def list_files():
     try:
         files = sorted(
@@ -209,6 +296,50 @@ def list_files():
     if not files:
         return "(файлів немає)"
     return "\n".join(files)
+
+
+def search_files(query):
+    results = []
+    for root, _, files in os.walk(BASE_DIR):
+        for file in files:
+            path = os.path.join(root, file)
+            try:
+                with open(path, "r", encoding="utf-8") as opened_file:
+                    if query in opened_file.read():
+                        results.append(file)
+            except Exception:
+                continue
+    return "\n".join(results) if results else "Нічого не знайдено"
+
+
+def read_logs(lines=50):
+    try:
+        with open("/Users/oleksandr_ishcheko/agent.log", "r", encoding="utf-8") as file:
+            return "".join(file.readlines()[-lines:])
+    except Exception:
+        return "❌ Лог недоступний"
+
+
+def system_info():
+    import psutil
+    return (
+        f"CPU: {psutil.cpu_percent()}%\n"
+        f"RAM: {psutil.virtual_memory().percent}%\n"
+        f"Disk: {psutil.disk_usage('/').percent}%"
+    )
+
+
+def current_time():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def fetch_url(url):
+    try:
+        response = requests.get(url, timeout=5)
+        return response.text[:1000]
+    except Exception:
+        return "❌ Не вдалося отримати URL"
 
 
 def load_memory():
@@ -240,6 +371,15 @@ def list_memory():
     if not data:
         return "Памʼять порожня"
     return "\n".join([f"{key}: {value}" for key, value in data.items()])
+
+
+def delete_memory(key):
+    data = load_memory()
+    if key in data:
+        del data[key]
+        save_memory(data)
+        return f"🗑 Видалено: {key}"
+    return "❌ Ключ не знайдено"
 
 
 
@@ -436,8 +576,35 @@ def try_execute_tool(response):
                     args.get("content", "")
                 ))
 
+            elif tool == "append_file":
+                results.append(append_file(
+                    args.get("filename"),
+                    args.get("content", "")
+                ))
+
+            elif tool == "create_directory":
+                results.append(create_directory(args.get("path")))
+
+            elif tool == "delete_directory":
+                results.append(delete_directory(args.get("path")))
+
             elif tool == "list_files":
                 results.append(list_files())
+
+            elif tool == "search_files":
+                results.append(search_files(args.get("query", "")))
+
+            elif tool == "read_logs":
+                results.append(read_logs(args.get("lines", 50)))
+
+            elif tool == "system_info":
+                results.append(system_info())
+
+            elif tool == "current_time":
+                results.append(current_time())
+
+            elif tool == "fetch_url":
+                results.append(fetch_url(args.get("url", "")))
 
             elif tool == "git_pull":
                 git_result = git_pull()
@@ -455,6 +622,9 @@ def try_execute_tool(response):
 
             elif tool == "list_memory":
                 results.append(list_memory())
+
+            elif tool == "delete_memory":
+                results.append(delete_memory(args.get("key")))
 
         return "\n".join(results)
 
