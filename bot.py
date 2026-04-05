@@ -243,15 +243,15 @@ def ask_ai(prompt, mode="agent"):
         return "GROQ_API_KEY не встановлено"
 
     if mode == "agent":
-        system = AGENT_PROMPT
+        system_prompt = AGENT_PROMPT
     else:
-        system = AI_PROMPT
+        system_prompt = AI_PROMPT
 
     client = Groq(api_key=GROQ_API_KEY)
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ],
         temperature=0,
@@ -320,7 +320,8 @@ async def handle(update, context):
     save_last_chat_id(update.effective_chat.id)
 
     ai_response = ask_ai(text, mode="agent")
-    print("AI:", ai_response)
+    print("MODE: AGENT")
+    print("AI RESPONSE:", ai_response)
     result = try_execute_tool(ai_response)
     print("RESULT:", result)
 
