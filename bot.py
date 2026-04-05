@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import subprocess
 import asyncio
 import signal
@@ -34,8 +33,10 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 Ти НЕ пояснюєш.
 Ти виконуєш.
 
-Якщо дія потрібна → поверни JSON:
-{"tool": "...", "args": {...}}
+Якщо дія потрібна → ALWAYS return JSON ARRAY:
+[
+  {"tool": "...", "args": {...}}
+]
 
 ---
 
@@ -43,32 +44,46 @@ AGENT_PROMPT = """Ти локальний AI-агент.
 
 Запит: "створи файл test.txt"
 Відповідь:
-{"tool": "create_file", "args": {"filename": "test.txt"}}
+[
+  {"tool": "create_file", "args": {"filename": "test.txt"}}
+]
 
 Запит: "прочитай файл test.txt"
 Відповідь:
-{"tool": "read_file", "args": {"filename": "test.txt"}}
+[
+  {"tool": "read_file", "args": {"filename": "test.txt"}}
+]
 
 Запит: "видали файл test.txt"
 Відповідь:
-{"tool": "delete_file", "args": {"filename": "test.txt"}}
+[
+  {"tool": "delete_file", "args": {"filename": "test.txt"}}
+]
 
 Запит: "покажи файли"
 Відповідь:
-{"tool": "list_files", "args": {}}
+[
+  {"tool": "list_files", "args": {}}
+]
 
 Запит: "онови код"
 Відповідь:
-{"tool": "git_pull", "args": {}}
+[
+  {"tool": "git_pull", "args": {}}
+]
 
 Запит: "перезапусти"
 Відповідь:
-{"tool": "restart", "args": {}}
+[
+  {"tool": "restart", "args": {}}
+]
 
 Запит: "онови код і перезапустися"
 Відповідь:
-{"tool": "git_pull", "args": {}}
-{"tool": "restart", "args": {}}
+[
+  {"tool": "git_pull", "args": {}},
+  {"tool": "restart", "args": {}}
+]
 
 ---
 
@@ -261,55 +276,45 @@ def ask_ai(prompt, mode="agent"):
 
 def try_execute_tool(response):
     try:
-        blocks = re.findall(r'\{.*?\}', response, re.DOTALL)
+        data = json.loads(response)
+
+        if not isinstance(data, list):
+            return None
 
         results = []
+        git_result = ""
 
-        for block in blocks:
-            try:
-                data = json.loads(block)
+        for item in data:
+            tool = item.get("tool")
+            args = item.get("args", {})
 
-                tool = data.get("tool")
-                args = data.get("args", {})
+            if tool == "create_file":
+                results.append(create_file(args.get("filename")))
 
-                if tool == "create_file":
-                    filename = args.get("filename")
-                    if filename:
-                        results.append(create_file(filename))
+            elif tool == "read_file":
+                results.append(read_file(args.get("filename")))
 
-                elif tool == "read_file":
-                    filename = args.get("filename")
-                    if filename:
-                        results.append(read_file(filename))
+            elif tool == "delete_file":
+                results.append(delete_file(args.get("filename")))
 
-                elif tool == "delete_file":
-                    filename = args.get("filename")
-                    if filename:
-                        results.append(delete_file(filename))
+            elif tool == "write_file":
+                results.append(write_file(
+                    args.get("filename"),
+                    args.get("content", "")
+                ))
 
-                elif tool == "write_file":
-                    filename = args.get("filename")
-                    content = args.get("content", "")
-                    if filename:
-                        results.append(write_file(filename, content))
+            elif tool == "list_files":
+                results.append(list_files())
 
-                elif tool == "list_files":
-                    results.append(list_files())
+            elif tool == "git_pull":
+                git_result = git_pull()
+                results.append(git_result)
 
-                elif tool == "git_pull":
-                    git_result = git_pull()
-                    results.append(git_result)
-
-                elif tool == "restart":
+            elif tool == "restart":
+                if "Already up to date" not in git_result:
                     results.append(restart_agent())
 
-            except Exception as e:
-                results.append(f"❌ Помилка: {str(e)}")
-
-        if results:
-            return "\n".join(results)
-
-        return None
+        return "\n".join(results)
 
     except Exception as e:
         return f"❌ Executor error: {str(e)}"
