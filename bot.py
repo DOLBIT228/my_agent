@@ -522,6 +522,38 @@ def ask_ai(prompt, mode="agent"):
     return response.choices[0].message.content or ""
 
 
+def plan_task(prompt):
+    if not GROQ_API_KEY:
+        return "GROQ_API_KEY не встановлено"
+
+    client = Groq(api_key=GROQ_API_KEY)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": """
+Ти планувальник задач.
+
+Твоя задача:
+розбити запит користувача на кроки.
+
+Поверни JSON список:
+
+[
+  {"step": "...", "tool": "...", "args": {...}}
+]
+
+НЕ пояснюй.
+"""
+            },
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    return response.choices[0].message.content
+
+
 def extract_memory_candidate(text):
     response = ask_ai(text, mode="memory").strip()
 
@@ -686,6 +718,17 @@ async def status_handler(update, context):
     await update.message.reply_text("Агент активний")
 
 
+async def plan_handler(update, context):
+    text = " ".join(context.args)
+
+    if not text:
+        await update.message.reply_text("Введи задачу")
+        return
+
+    plan = plan_task(text)
+    await update.message.reply_text(plan)
+
+
 def main():
     if not TOKEN:
         raise RuntimeError("TOKEN не встановлено у файлі .env")
@@ -697,6 +740,8 @@ def main():
         .build()
     )
     app.add_handler(CommandHandler("ai", ai_handler))
+    app.add_handler(CommandHandler("plan", plan_handler))
+    app.add_handler(CommandHandler("plans", plan_handler))
     app.add_handler(CommandHandler("tools", tools_handler))
     app.add_handler(CommandHandler("status", status_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
