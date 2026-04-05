@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import asyncio
+import re
 import signal
 import sys
 from pathlib import Path
@@ -553,30 +554,39 @@ def auto_remember_from_text(text):
     return remember(key, value)
 
 
+def has_word(text, word):
+    return re.search(rf"\b{word}\b", text) is not None
+
+
 def detect_intent(text):
     t = text.lower().strip()
 
-    # ---- exact commands ----
+    # --- exact ---
     if t in ["інструменти", "tools", "що ти вмієш"]:
         return "tools"
 
     if t in ["покажи файли", "список файлів", "які файли є"]:
         return "list_files"
 
-    if t in ["стан системи", "нагрузка системи"]:
+    # --- system ---
+    if has_word(t, "час"):
+        if has_word(t, "котра") or has_word(t, "який"):
+            return "time"
+
+    if has_word(t, "стан") and has_word(t, "системи"):
         return "system_info"
 
-    if t in ["котра година", "який час", "час зараз"]:
-        return "time"
-
-    # ---- flexible commands ----
-    if "онови код" in t and "перезапусти" in t:
+    # --- combined ---
+    if has_word(t, "онови") and has_word(t, "код") and (
+        has_word(t, "перезапусти") or has_word(t, "перезавантаж")
+    ):
         return "update_and_restart"
 
-    if "онови код" in t:
+    # --- single ---
+    if has_word(t, "онови") and has_word(t, "код"):
         return "git_pull"
 
-    if "перезапусти" in t or "перезавантаж" in t:
+    if has_word(t, "перезапусти") or has_word(t, "перезавантаж"):
         return "restart"
 
     return None
