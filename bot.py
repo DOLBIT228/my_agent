@@ -18,6 +18,8 @@ DEFAULT_CHAT_ID = os.getenv("DEFAULT_CHAT_ID")
 BASE_DIR = "/Users/oleksandr_ishcheko/ai-agent/files"
 LAST_CHAT_ID_FILE = Path("/Users/oleksandr_ishcheko/ai-agent/.last_chat_id")
 MEMORY_FILE = "/Users/oleksandr_ishcheko/ai-agent/memory.json"
+TASKS_FILE = "/Users/oleksandr_ishcheko/ai-agent/tasks.json"
+tasks = {}
 
 TOOL_SIGNATURES = [
     "create_file(filename)",
@@ -300,6 +302,76 @@ def delete_memory(key):
         return f"🗑 Видалено: {key}"
     return "❌ Ключ не знайдено"
 
+
+def load_tasks():
+    if not os.path.exists(TASKS_FILE):
+        return {}
+
+    try:
+        with open(TASKS_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    return data if isinstance(data, dict) else {}
+
+
+def save_tasks():
+    with open(TASKS_FILE, "w", encoding="utf-8") as file:
+        json.dump(tasks, file, ensure_ascii=False, indent=2)
+
+
+def create_task(task_text):
+    from uuid import uuid4
+
+    task_id = str(uuid4())
+    tasks[task_id] = {
+        "id": task_id,
+        "status": "pending",
+        "steps": [],
+        "result": "",
+    }
+    save_tasks()
+    return task_id
+
+
+def run_task(task_id, task_text):
+    task = tasks.get(task_id)
+    if task is None:
+        return None
+
+    task["status"] = "running"
+    save_tasks()
+
+    try:
+        ai_response = ask_ai(task_text, mode="agent")
+        result = try_execute_tool(ai_response)
+
+        if result is not None:
+            task["steps"] = [line for line in result.splitlines() if line.strip()]
+            task["result"] = result
+        else:
+            task["result"] = ai_response
+
+        task["status"] = "done"
+    except Exception as error:
+        task["status"] = "error"
+        task["result"] = f"❌ Помилка виконання задачі: {error}"
+
+    save_tasks()
+    return task["result"]
+
+
+def get_task_status(task_id):
+    task = tasks.get(task_id)
+    if task is None:
+        return "❌ Task not found"
+
+    result = task.get("result", "")
+    if not result:
+        result = "(поки без результату)"
+
+    return f"status: {task.get('status', 'unknown')}\nresult: {result}"
 
 
 
@@ -591,9 +663,32 @@ async def status_handler(update, context):
     await update.message.reply_text("Агент активний")
 
 
+async def task_handler(update, context):
+    task_text = " ".join(context.args).strip()
+    if not task_text:
+        await update.message.reply_text("Введи опис задачі після /task")
+        return
+
+    task_id = create_task(task_text)
+    run_task(task_id, task_text)
+    await update.message.reply_text(f"✅ Задача виконана\nID: {task_id}")
+
+
+async def task_status_handler(update, context):
+    task_id = " ".join(context.args).strip()
+    if not task_id:
+        await update.message.reply_text("Введи ID після /task_status")
+        return
+
+    await update.message.reply_text(get_task_status(task_id))
+
+
 def main():
     if not TOKEN:
         raise RuntimeError("TOKEN не встановлено у файлі .env")
+
+    global tasks
+    tasks = load_tasks()
 
     app = (
         ApplicationBuilder()
@@ -604,6 +699,8 @@ def main():
     app.add_handler(CommandHandler("ai", ai_handler))
     app.add_handler(CommandHandler("tools", tools_handler))
     app.add_handler(CommandHandler("status", status_handler))
+    app.add_handler(CommandHandler("task", task_handler))
+    app.add_handler(CommandHandler("task_status", task_status_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
