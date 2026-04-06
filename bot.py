@@ -43,7 +43,7 @@ TOOL_SIGNATURES = [
     "delete_memory(key)",
 ]
 
-AGENT_PROMPT = f"""Ти універсальний AI агент.
+AGENT_PROMPT = """Ти універсальний AI агент.
 
 Ти можеш:
 1. Відповідати на питання
